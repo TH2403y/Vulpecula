@@ -1,32 +1,63 @@
-name: Project Build
+name: Bulid&Release
+
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - 2.0
+
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
+
     steps:
-      - name: checkout repository
-        uses: actions/checkout@v2
-      - name: cache gradle packages
-        uses: actions/cache@v2
+      - name: Checkout code
+        uses: actions/checkout@main
+
+      - name: Validate Gradle Wrapper
+        uses: gradle/wrapper-validation-action@main
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@main
         with:
-          key: ${{ runner.os }}-build-${{ env.cache-name }}
-          path: |
-            ~/.gradle/caches
-            ~/.gradle/wrapper
-      - name: validate gradle wrapper
-        uses: gradle/wrapper-validation-action@v1
-      - name: setup jdk 16.0
-        uses: actions/setup-java@v2
+          distribution: "temurin"
+          java-version: 21
+          check-latest: true
+
+      - name: Cache Gradle Dependencies
+        uses: actions/cache@main
         with:
-          distribution: adopt
-          java-version: 16.0
-      - name: make gradle wrapper executable
-        run: chmod +x ./gradlew
-      - name: build
-        run: ./gradlew build
-      - name: capture build artifacts
-        uses: actions/upload-artifact@v2
+          path: ~/.gradle/caches/
+          key: ${{ runner.os }}-gradle-${{ hashFiles('**/build.gradle') }}
+          restore-keys: |
+            ${{ runner.os }}-gradle-
+
+      - name: Build with Gradle
+        run: |
+           ./gradlew build
+           find . -type f -name "*.jar"
+
+      - name: Get timestamp and short SHA
+        id: timestamp
+        run: |
+          echo "::set-output name=timestamp::$(TZ='Asia/Shanghai' date +%s)"
+          echo "::set-output name=repo_name::$(echo ${{ github.repository }} | cut -d'/' -f2)"
+          echo "::set-output name=short_sha::$(git rev-parse --short HEAD)"
+
+      - name: Upload plugin artifact
+        uses: actions/upload-artifact@main
+        if: success()
         with:
-          name: Artifacts
-          path: build/libs/
+          name: ${{ steps.timestamp.outputs.repo_name }}-${{ steps.timestamp.outputs.short_sha }}
+          path: plugin/build/libs/*.jar
+
+      - name: Automatic release
+        if: success()
+        uses: marvinpinto/action-automatic-releases@latest
+        with:
+          repo_token: ${{ secrets.GITHUB_TOKEN }}
+          automatic_release_tag: ${{ steps.timestamp.outputs.timestamp }}
+          prerelease: false
+          title: "${{ steps.timestamp.outputs.repo_name }}-${{ steps.timestamp.outputs.short_sha }} Release"
+          files: |
+            plugin/build/libs/*.jar
