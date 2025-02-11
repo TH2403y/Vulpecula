@@ -34,7 +34,7 @@ subprojects {
             install(Kether)
         }
         version {
-            taboolib = "6.2.0"
+            taboolib = "6.2.3"
         }
         description {
             name(rootProject.name)
